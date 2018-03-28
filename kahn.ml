@@ -55,7 +55,35 @@ module Net: S = struct
   type 'a in_port = in_channel
   type 'a out_port = out_channel
 
-  let new_channel () = 
+  let port = ref 10000
+
+  let create_addr () = port := !port + 1;
+                      ADDR_INET(inet_addr_any, !port)
+
+  let rec try_to_connect s addr =
+    try
+      connect s addr;
+    with _ -> Thread.yield ();
+              try_to_connect s addr
+
+  let new_channel () =
+    let addr = create_addr () in
+    let s1 = socket PF_INET SOCK_STREAM 0 in
+    let s2 = socket PF_INET SOCK_STREAM 0 in
+    let (fd_in, fd_out) = Unix.pipe () in
+    let input_channel = Unix.in_channel_of_descr fd_in in
+    let output_channel = Unix.out_channel_of_descr fd_out in
+    match fork () with
+    | 0 -> try_to_connect s1;
+           Marshal.to_channel output_channel s1 [Marshal.Compat_32];
+           input_channel, output_channel
+
+    | pid_child -> bind s2 addr; listen s2 20;
+           let fd_client, addr_client = accept s2 in
+           let ch_in = Unix.in_channel_of_descr fd_client in
+           let ch1 = Unix.out_channel_of_descr fd_out in
+           let ch_out = Unix.out_channel_of_descr s1 in
+           ch_in, ch_out
 
   let put value out_channel () =
     Marshal.to_channel out_channel value [Marshal.Compat_32]
