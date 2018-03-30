@@ -63,19 +63,20 @@ module Net: S = struct
   let rec try_to_connect s addr =
     try
       connect s addr;
-    with _ -> Thread.yield ();
-              try_to_connect s addr
+    with _ -> try_to_connect s addr
 
   let new_channel () =
     let addr = create_addr () in
     let s1 = socket PF_INET SOCK_STREAM 0 in
     let s2 = socket PF_INET SOCK_STREAM 0 in
     let (fd_in, fd_out) = Unix.pipe () in
+    let (fd_in1, fd_out1) = Unix.pipe () in
     let input_channel = Unix.in_channel_of_descr fd_in in
-    let output_channel = Unix.out_channel_of_descr fd_out in
+    let output_channel = Unix.out_channel_of_descr fd_out1 in
     match fork () with
-    | 0 -> try_to_connect s1;
-           Marshal.to_channel output_channel s1 [Marshal.Compat_32];
+    | 0 -> try_to_connect s1 addr;
+           exit 0;
+           print_endline "LUL";
            input_channel, output_channel
 
     | pid_child -> bind s2 addr; listen s2 20;
@@ -85,8 +86,35 @@ module Net: S = struct
            let ch_out = Unix.out_channel_of_descr s1 in
            ch_in, ch_out
 
+    (*let new_channel () =
+      let (fd_in, fd_out) = Unix.socketpair Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+      let input_channel = Unix.in_channel_of_descr fd_in in
+      let output_channel = Unix.out_channel_of_descr fd_out in
+      input_channel, output_channel*)
+
+  (*let new_channel () =
+    let addr = create_addr () in
+    let s1 = socket PF_INET SOCK_STREAM 0 in
+    let s2 = socket PF_INET SOCK_STREAM 0 in
+    let (fd_in, fd_out) = Unix.pipe () in
+    let input_channel = Unix.in_channel_of_descr fd_in in
+    let output_channel = Unix.out_channel_of_descr fd_out in
+    match fork () with
+    | 0 ->
+        try_to_connect s1 addr;
+            exit 0 ;
+          print_endline "child hasn't exited";
+             input_channel, output_channel
+
+    | pid_child -> bind s2 addr; listen s2 20;
+           let fd_client, addr_client = accept s2 in
+           let ch_in = Unix.in_channel_of_descr fd_client in
+           let ch_out = Unix.out_channel_of_descr s1 in
+           ch_in, ch_out*)
+
   let put value out_channel () =
-    Marshal.to_channel out_channel value [Marshal.Compat_32]
+    Marshal.to_channel out_channel value [Marshal.Compat_32];
+    flush out_channel
 
   let rec get in_channel () =
     try
@@ -122,18 +150,6 @@ end
 module Pr: S = struct
   type 'a process = (unit -> 'a)
 
-  (*
-  type 'a in_port = { channel_in_port : in_channel ; mutex : Mutex.t ; }
-  type 'a out_port = { channel_out_port : out_channel ; mutex : Mutex.t ;}
-
-  let new_channel () = let (fd_in, fd_out) = Unix.pipe () in
-    let in_channel = { channel_in_port = Unix.in_channel_of_descr fd_in ;
-                        mutex = Mutex.create () ; } in
-    let out_channel = { channel_out_port = Unix.out_channel_of_descr fd_out ;
-                        mutex = Mutex.create () ; } in
-    in_channel, out_channel
-  *)
-
   type 'a in_port = in_channel
   type 'a out_port = out_channel
 
@@ -143,7 +159,8 @@ module Pr: S = struct
     in_channel, out_channel
 
   let put value out_channel () =
-    Marshal.to_channel out_channel value [Marshal.Compat_32]
+    Marshal.to_channel out_channel value [Marshal.Compat_32];
+    flush out_channel
 
   let rec get in_channel () =
     try
@@ -172,6 +189,36 @@ module Pr: S = struct
     let v = e () in
     e' v ()
 
+end
+
+(*Implementation with sequential simulation*)
+
+module Seq: S = struct
+  type 'a process = ('a -> unit) -> unit
+
+
+  type 'a channel = { q : 'a Queue.t; m : Mutex.t; }
+  type 'a in_port = 'a channel
+  type 'a out_port = 'a channel
+
+  let queue_Process = Queue.create ()
+
+  let new_channel () =
+    let q = { q = Queue.create (); m = Mutex.create (); } in
+    q, q
+
+  let put v c = failwith "sml";;
+
+  let rec get c = failwith "sml2";;
+
+  let doco l = failwith "sml3";;
+
+  let return v = let t = (fun v -> ()) in
+                (fun t -> ())
+
+  let bind e e' = failwith "sml5";;
+
+  let run e = failwith "sml6";;
 end
 
 (*Original implementation by Thread*)
