@@ -57,7 +57,7 @@ module Net: S = struct
 
   let port = ref 10000
 
-  let create_addr () = port := !port + 1;
+  let create_addr () = port := (!port + 1) mod 10000 + 10000;
                       ADDR_INET(inet_addr_any, !port)
 
   let rec try_to_connect s addr =
@@ -69,6 +69,7 @@ module Net: S = struct
     let addr = create_addr () in
     let s1 = socket PF_INET SOCK_STREAM 0 in
     let s2 = socket PF_INET SOCK_STREAM 0 in
+    Unix.setsockopt s2 SO_REUSEADDR true;
     let (fd_in, fd_out) = Unix.pipe () in
     let (fd_in1, fd_out1) = Unix.pipe () in
     let input_channel = Unix.in_channel_of_descr fd_in in
@@ -76,7 +77,6 @@ module Net: S = struct
     match fork () with
     | 0 -> try_to_connect s1 addr;
            exit 0;
-           print_endline "LUL";
            input_channel, output_channel
 
     | pid_child -> bind s2 addr; listen s2 20;
@@ -196,29 +196,65 @@ end
 module Seq: S = struct
   type 'a process = ('a -> unit) -> unit
 
-
-  type 'a channel = { q : 'a Queue.t; m : Mutex.t; }
+  (*type 'a channel = { q : 'a Queue.t; mutable ('a -> unit) option }*)
+  type 'a channel = { mutable v:'a option;
+  		                mutable read: ('a -> unit) option;
+  		                mutable write: ((unit -> unit) * 'a) option }
   type 'a in_port = 'a channel
   type 'a out_port = 'a channel
 
   let queue_Process = Queue.create ()
 
+  let enqueue p = Queue.push p queue_Process
+
+  let dequeue () = Queue.pop queue_Process
+
+  exception Stop
+
+  let run (f : 'a process) : 'a  =
+    print_endline "start";
+    enqueue (fun () -> f (fun x -> ()));
+    (*try*)
+    while true do
+      (*print_endline "shit";*)
+      dequeue () ()
+    done;
+    raise Stop
+
+
+  let doco (l : (unit process) list) : (unit process) =
+    (fun x -> (*print_endline "LOL";*) List.iter (fun f -> enqueue (fun () -> (f (fun () -> ())))) l)
+
   let new_channel () =
-    let q = { q = Queue.create (); m = Mutex.create (); } in
+    let q = { v=None; read=None; write=None } in
     q, q
 
-  let put v c = failwith "sml";;
+  let put v out k =
+    match out with
+    | { v=Some v'; read=_; write=None } -> out.write <- Some (k,v)
 
-  let rec get c = failwith "sml2";;
+    | { v=None; read=Some r; write=None } ->
+          out.read <- None; enqueue (fun () -> r v); k ()
 
-  let doco l = failwith "sml3";;
+    | { v=None; read=None; write=None } -> out.v <- Some v; k ()
 
-  let return v = let t = (fun v -> ()) in
-                (fun t -> ())
+    | _ -> failwith "failed put_mvar"
 
-  let bind e e' = failwith "sml5";;
+  let get inp k =
+    match inp with
+    | { v=Some v; read=None; write=None } -> inp.v <- None; k v
 
-  let run e = failwith "sml6";;
+    | { v=Some v; read=None; write=Some(c,v') } ->
+        inp.v <- Some v'; inp.write <- None; enqueue c; k v
+
+    | { v=None; read=None; write=_ } -> inp.read <- Some(k)
+
+    | _ -> failwith "failed take_mvar"
+
+
+  let return v = fun k -> k v
+
+  let bind e e' = fun k -> e (fun v -> e' v k)
 end
 
 (*Original implementation by Thread*)
