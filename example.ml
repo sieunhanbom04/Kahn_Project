@@ -19,8 +19,9 @@ module Example (K : Kahn.S) = struct
     (delay K.new_channel ()) >>=
     (fun (q_in, q_out) -> K.doco [ integers q_out ; output q_in ; ])
 
+  let test = (delay (fun () -> 1) ())
 end
 
-module E = Example(Kahn.Pr)
+module E = Example(Kahn.Seq)
 
-let () = E.K.run E.main
+let () = let t = E.K.run (E.main) in ()

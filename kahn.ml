@@ -223,7 +223,7 @@ module Seq: S = struct
 
 
   let doco (l : (unit process) list) : (unit process) =
-    (fun x -> (*print_endline "LOL";*) List.iter (fun f -> enqueue (fun () -> (f (fun () -> ())))) l)
+    (fun x -> print_endline "LOL"; List.iter (fun f -> enqueue (fun () -> (f (fun () -> ())))) l)
 
   let new_channel () =
     let q = { v=None; read=None; write=None } in
@@ -294,7 +294,7 @@ module Th: S = struct
   let return v = (fun () -> v)
 
   let bind e e' () =
-    let v = e () in
+    let v = e ()
     Thread.yield ();
     e' v ()
 
